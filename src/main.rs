@@ -3,44 +3,75 @@ use std::process::Command;
 
 use gilrs::{Gilrs, Button, Event, EventType};
 
-fn handle_button(start_code: &[Button], button_queue: &mut VecDeque<Button>, pressed_button: Button) {
-    // Update button queue
-    println!("Pressed {:?}", pressed_button);
-    button_queue.push_back(pressed_button);
-    if button_queue.len() > start_code.len() {
-        button_queue.pop_front();
-    }
+// struct Combo {
+//     buttons: Vec<Button>
+// }
 
-    // Check if the macro code has been entered
-    for element in start_code.into_iter().enumerate() {
-        let (index, button): (usize, &Button) = element;
-        if button_queue.get(index) != Some(&button) {
-            return;
+struct State {
+    start_code: Vec<Button>,
+    button_queue: VecDeque<Button>,
+    // combos: Vec<Combo>
+}
+
+impl State {
+    fn update_queue(&mut self, pressed_button: Button) {
+        // Update button queue
+        println!("Pressed {:?}", pressed_button);
+        self.button_queue.push_back(pressed_button);
+        if self.button_queue.len() > self.start_code.len() {
+            self.button_queue.pop_front();
         }
+        println!("Current queue: {:?}", self.button_queue);
     }
 
-    println!("Found the macro code!");
-    button_queue.clear(); // Have to clear to prevent activating again too soon
+    fn handle_button(&mut self, pressed_button: Button) {
+        self.update_queue(pressed_button);
 
-    // Macro Temp
-    let _ = if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .args(["/C", "C:\\Program Files (x86)\\Steam\\steam.exe", "steam://open/bigpicture"])
-            .spawn()
-            .expect("Failed to open Steam.");
-    } else { println!("Get a PC, Huntis.") }; // I'll add other platforms / functions later
+        // Check if the macro code has been entered
+        let is_macro_entered = 
+            self.start_code.len() == self.button_queue.len() &&
+            self.start_code 
+                .iter()
+                .zip(self.button_queue.iter())
+                .all(|(code, entry)| code == entry);
+        
+        println!("Is macro code entered: {}", is_macro_entered);
+
+        // Stop executing if no macro detected
+        if !is_macro_entered { return; }
+
+        println!("Found the macro code!");
+        self.button_queue.clear(); // Have to clear to prevent activating again too soon
+
+        // Testing a command to run
+        let _ = if cfg!(target_os = "windows") {
+            Command::new("cmd")
+                .args(["/C", "C:\\Program Files (x86)\\Steam\\steam.exe", "steam://open/bigpicture"])
+                .spawn()
+                .expect("Failed to open Steam.");
+        } else { println!("Get a PC, Huntis.") }; // I'll add other platforms / functions later
+    }
 }
 
 fn main() {
     let mut gilrs: Gilrs = Gilrs::new().unwrap();
 
     // This is the sequence to begin the controller macropad behavior
-    let start_code = [
+    let start_code = vec!( 
         Button::Start,
         Button::Select,
         Button::Start
-    ];
-    let mut button_queue: VecDeque<Button> = VecDeque::with_capacity(start_code.len());
+    );
+
+    let button_queue: VecDeque<Button> = 
+        VecDeque::with_capacity(
+            start_code.len()
+        );
+
+    let mut state: State = State { 
+        start_code,
+        button_queue 
+    };
 
     // List connected gamepads
     for (_id, gamepad) in gilrs.gamepads() {
@@ -55,17 +86,11 @@ fn main() {
             // Set the gamepad if none is active
             if active_gamepad.is_none() {
                 active_gamepad = Some(id);
+                println!("{}", id);
             }
 
-            // println!("{:?}", event);
-            match event {
-                EventType::ButtonReleased(Button::East, ..) => handle_button(&start_code, &mut button_queue, Button::East),
-                EventType::ButtonReleased(Button::South, ..) => handle_button(&start_code, &mut button_queue, Button::South),
-                EventType::ButtonReleased(Button::West, ..) => handle_button(&start_code, &mut button_queue, Button::West),
-                EventType::ButtonReleased(Button::North, ..) => handle_button(&start_code, &mut button_queue, Button::North),
-                EventType::ButtonReleased(Button::Start, ..) => handle_button(&start_code, &mut button_queue, Button::Start),
-                EventType::ButtonReleased(Button::Select, ..) => handle_button(&start_code, &mut button_queue, Button::Select),
-                _ => (),
+            if let EventType::ButtonPressed(button, ..) = event {
+                state.handle_button(button);
             }
         }
     }
